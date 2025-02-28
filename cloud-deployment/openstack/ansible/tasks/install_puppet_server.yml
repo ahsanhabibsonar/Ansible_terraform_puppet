@@ -140,27 +140,29 @@
         name: puppet
         state: started
           
-    - name: Create Ansible_terraform_puppet directory
-      ansible.builtin.file:
-        path: /home/ubuntu/Ansible_terraform_puppet
-        state: directory
-        owner: ubuntu
-        group: ubuntu
-        mode: "0755"
-
-    - name: Download acit4430 git repository
-      ansible.builtin.git:
-        repo: https://github.com/ahsanhabibsonar/Ansible_terraform_puppet.git
-        dest: /home/ubuntu/Ansible_terraform_puppet
-
-    - name: Copy site.pp to /etc/puppetlabs/code/environments/production/manifests/
-      ansible.builtin.copy:
-        src: /home/ubuntu/Ansible_terraform_puppet/site.pp
-        dest: /etc/puppetlabs/code/environments/production/manifests/
-        remote_src: true
-
     - name: Run group of tasks as non-root user 
+      become: false
       block:
+        - name: Create Ansible_terraform_puppet directory
+          ansible.builtin.file:
+            path: /home/ubuntu/Ansible_terraform_puppet
+            state: directory
+            owner: ubuntu
+            group: ubuntu
+            mode: "0755"
+
+        - name: Download acit4430 git repository
+          ansible.builtin.git:
+            repo: https://github.com/ahsanhabibsonar/Ansible_terraform_puppet.git
+            dest: /home/ubuntu/Ansible_terraform_puppet
+
+        - name: Copy site.pp to /etc/puppetlabs/code/environments/production/manifests/
+          become: true
+          ansible.builtin.copy:
+            src: /home/ubuntu/Ansible_terraform_puppet/site.pp
+            dest: /etc/puppetlabs/code/environments/production/manifests/
+            remote_src: true
+
 
         - name: Delete existing SSH key if it exists
           openstack.cloud.keypair:
@@ -178,6 +180,66 @@
         - name: Terrform creates agents VM inside puppet server
           ansible.builtin.include_tasks:
             file: /home/ubuntu/Ansible_terraform_puppet/cloud-deployment/openstack/ansible/tasks/create_multiple_vms.yml
+
+              
+- hosts: dynamic_group
+  vars:
+    ansible_ssh_common_args: " -o StrictHostKeyChecking=no"
+    ansible_ssh_private_key_file: /home/ubuntu/.ssh/id_ed25519
+    puppet_server: puppetmaster.openstacklocal
+    ca_cert_path: /etc/puppet/puppetserver/ca/ca_crt.pem
+    puppet_ssl_dir: /var/lib/puppet/ssl # Updated to agent directory
+
+  become: true
+  tasks:
+    - name: Download Puppet agent
+      ansible.builtin.get_url:
+        url: https://apt.puppet.com/puppet8-release-jammy.deb
+        dest: /tmp/puppet8-release-jammy.deb
+    - name: Install puppet8-release-jammy.deb
+      ansible.builtin.apt:
+        deb: /tmp/puppet8-release-jammy.deb
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+    - name: Install puppet agent
+      ansible.builtin.apt:
+        name: puppet-agent
+        state: present
+
+    - name: Set multiple Puppet configurations in puppet.conf
+      ansible.builtin.blockinfile:
+        path: /etc/puppetlabs/puppet/puppet.conf
+        block: |
+          [main]
+          certname = "{{ ansible_hostname }}.openstacklocal"
+          server = {{ puppet_server }}
+
+          [agent]
+          waitforcert = 60
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+
+    - name: Add Puppetserver to /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ server_ip }} {{ puppet_server }} puppetmaster"
+        state: present
+
+    - name: Ensure puppet-agent is running
+      ansible.builtin.service:
+        name: puppet
+        state: started
+
+    - name: Wait for Puppet service to settle
+      ansible.builtin.pause:
+        seconds: 10
+
+
+
+##Configuring puppet agents within puppet master
+#- name: Run install_puppet_agents on dynamic hosts
+#  import_playbook: /home/ubuntu/Ansible_terraform_puppet/cloud-deployment/openstack/ansible/tasks/install_puppet_agents.yml
+
 
 ##    - name: Set Ansible connection to local
 ##      ansible.builtin.set_fact:
