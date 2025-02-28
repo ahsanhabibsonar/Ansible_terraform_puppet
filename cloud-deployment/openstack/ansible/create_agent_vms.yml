@@ -1,0 +1,13 @@
+---
+- hosts: localhost
+  name: Use terraform to create a VM and install puppet on it
+  tasks:
+    - name: Include terraform VM generation script.
+      ansible.builtin.include_tasks:
+        file: tasks/create_multiple_vms.yml
+
+- name: Include puppet configuration playbook
+  ansible.builtin.import_playbook: tasks/install_puppet_agents.yml
+
+- name: Import puppetserver CA signing playbook
+  ansible.builtin.import_playbook: tasks/puppet_ca_signing.yml

@@ -1,0 +1,106 @@
+#create_multiple_vms.yml
+---
+- name: Initialize Terraform
+  ansible.builtin.command: terraform init
+  args:
+    chdir: /home/ubuntu/Ansible_terraform_puppet/cloud-deployment/openstack/puppet_agents_infra
+
+- name: Destroy Terraform configuration
+  ansible.builtin.command: terraform destroy --auto-approve
+  args:
+    chdir: /home/ubuntu/Ansible_terraform_puppet/cloud-deployment/openstack/puppet_agents_infra
+
+- name: Wait for Terraform destory to settle
+  ansible.builtin.pause:
+    seconds: 10
+  when: not ansible_check_mode
+
+- name: Apply Terraform configuration
+  ansible.builtin.command: terraform apply --auto-approve
+  args:
+    chdir: /home/ubuntu/Ansible_terraform_puppet/cloud-deployment/openstack/puppet_agents_infra
+
+- name: Get instaces' IP address
+  ansible.builtin.command: terraform output -json instance_ip_address #To get IPs of multiple VMs
+  args:
+    chdir: /home/ubuntu/Ansible_terraform_puppet/cloud-deployment/openstack/puppet_agents_infra
+  register: ipv4_address
+
+- name: Convert JSON string to a list
+  ansible.builtin.set_fact:
+    instance_ip_address: "{{ ipv4_address.stdout | from_json }}"
+
+#- name: Get localhost IP
+#  ansible.builtin.shell: "hostname -I | awk '{print $1}'"
+#  register: localhost_ip_result
+#  changed_when: false
+
+- name: Add host to dynamic group and pass localhost IP as puppermaster IP
+  ansible.builtin.add_host:
+    name: "{{ item }}"
+    groups: dynamic_group
+    #server_ip: "{{ localhost_ip_result.stdout }}"
+    server_ip: "{{ ansible_default_ipv4.address }}"
+  loop: "{{ instance_ip_address }}"
+- name: Ensure .ansible directory exists
+  ansible.builtin.file:
+    path: /home/ubuntu/.ansible
+    state: directory
+    mode: "0755"
+
+- name: Create or truncate hosts inventory file
+  ansible.builtin.copy:
+    content: |
+      [all]
+
+      [storage_servers]
+
+      [dev_servers]
+
+      [compile_servers]
+
+      [test_servers]
+    dest: /home/ubuntu/.ansible/hosts
+    owner: ubuntu
+    group: ubuntu
+    mode: "0644"
+
+- name: Categorize instances by group
+  ansible.builtin.set_fact:
+    instance_groups:
+      storage_servers:
+        - { name: storage1, ip: "ansible_host={{ instance_ip_address[0] }}" }
+        - { name: storage2, ip: "ansible_host={{ instance_ip_address[1] }}" }
+      dev_servers:
+        - { name: dev1, ip: "ansible_host={{ instance_ip_address[2] }}" }
+        - { name: dev2, ip: "ansible_host={{ instance_ip_address[3] }}" }
+      compile_servers:
+        - { name: compile1, ip: "ansible_host={{ instance_ip_address[4] }}" }
+        - { name: compile2, ip: "ansible_host={{ instance_ip_address[5] }}" }
+      test_servers:
+        - { name: test1, ip: "ansible_host={{ instance_ip_address[6] }}" }
+
+- name: Add categorized servers to inventory
+  ansible.builtin.blockinfile:
+    path: /home/ubuntu/.ansible/hosts
+    marker: "# {mark} ansible managed block  - {{ item.key }}"
+    insertafter: \[{{ item.key }}\]
+    block: |
+      {% for server in item.value %}
+      {{ server.name }} {{ server.ip }}
+      {% endfor %}
+  loop: "{{ instance_groups | dict2items }}"
+
+- name: Wait for SSH to become available
+  ansible.builtin.wait_for:
+    host: "{{ item }}"
+    port: 22
+    delay: 10
+    timeout: 120
+  loop: "{{ instance_ip_address }}"
+- name: Wait for system to be fully booted and ready for SSH
+  ansible.builtin.wait_for:
+    path: /var/run/nologin
+    state: absent
+    delay: 10
+    timeout: 600

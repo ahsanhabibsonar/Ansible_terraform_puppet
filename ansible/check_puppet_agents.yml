@@ -1,0 +1,27 @@
+- name: Validate Puppet Configuration and Dry Run on Agents
+  hosts: storage_servers,dev_servers,compile_servers,test_servers
+  become: yes
+  tasks:
+
+    - name: Validate Puppet site.pp syntax
+      command: /opt/puppetlabs/bin/puppet parser validate /etc/puppetlabs/code/environments/production/manifests/site.pp
+      delegate_to: localhost
+      run_once: true
+      register: syntax_check
+      ignore_errors: yes
+
+    - name: Show syntax validation result
+      debug:
+        msg: "{{ syntax_check.stdout_lines }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Perform Puppet Dry Run
+      command: /opt/puppetlabs/bin/puppet agent --test --noop
+      register: dry_run
+      ignore_errors: yes
+
+    - name: Show Puppet Dry Run result
+      debug:
+        msg: "{{ dry_run.stdout_lines }}"
+

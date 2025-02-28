@@ -1,0 +1,15 @@
+---
+- hosts: localhost
+  tasks:
+    - name: Include VM creation task
+      ansible.builtin.include_tasks:
+        file: tasks/create_single_vm.yml
+
+- name: Import puppet server spinning up and configuration playbook
+  ansible.builtin.import_playbook: tasks/install_puppet_server.yml
+
+#- hosts: dynamic_host
+#  tasks:
+#    - name: Include git checkout on the remote machine
+#      ansible.builtin.include_tasks:
+#        file: tasks/git_checkout.yml

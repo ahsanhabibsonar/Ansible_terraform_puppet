@@ -1,0 +1,13 @@
+- hosts: 10.196.242.175
+  become: true
+  tasks:
+    - name: Update cache
+      apt:
+        update_cache: true
+
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+
+

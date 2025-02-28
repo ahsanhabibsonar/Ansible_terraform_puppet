@@ -1,0 +1,137 @@
+---
+- hosts: localhost
+  name: A small project of setting up web and dev servers
+  tasks:
+    - name: Initialize Terraform
+      command: terraform init
+      args:
+        chdir: /home/ubuntu/acit4430-infra/cloud-deployment/openstack/infra-provisioning
+
+    - name: Destroy Terraform configuration
+      command: terraform destroy --auto-approve
+      args:
+        chdir: /home/ubuntu/acit4430-infra/cloud-deployment/openstack/infra-provisioning
+      register: terraform
+
+    - name: Apply Terraform configuration
+      command: terraform apply --auto-approve
+      args:
+        chdir: /home/ubuntu/acit4430-infra/cloud-deployment/openstack/infra-provisioning
+      register: terraform
+    - name: Get instace IP address
+      shell: terraform output -json instance_ip_address # To get IPs of multiple VMs
+      args:
+        chdir: /home/ubuntu/acit4430-infra/cloud-deployment/openstack/infra-provisioning
+      register: ipv4_in_json
+
+    - name: Convert JSON string to a list
+      set_fact:
+        instance_ip_address: "{{ ipv4_in_json.stdout | from_json }}"
+
+    - name: Add host to dynamic group
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: dynamic_group
+      loop: "{{ instance_ip_address }}"
+
+    #- name: Fail if no instance IP is found
+    #  fail:
+    #    msg: "Instance IP address is empty. Terraform output may have failed"
+    #  when: instance_ip_address.stdout == ""
+    #
+    - name: Wait for SSH to become available
+      wait_for:
+        host: "{{ item }}"
+        port: 22
+        delay: 10
+        timeout: 120
+      loop: "{{ instance_ip_address }}"
+    - name: Wait for system to be fully booted and ready for SSH
+      wait_for:
+        path: /var/run/nologin
+        state: absent
+        delay: 10
+        timeout: 600
+
+- hosts: dynamic_group
+  vars:
+    ansible_ssh_common_args: " -o StrictHostKeyChecking=no"
+  become: true
+  tasks:
+    - name: Get the hostname
+      set_fact:
+        host_name: "{{ ansible_facts['hostname'] }}"
+
+    - name: Create user "dev" at both web and dev server 
+      ansible.builtin.user:
+        name: dev
+        home: /home/dev
+        shell: /bin/bash
+        generate_ssh_key: yes
+        ssh_key_type: ed25519
+        ssh_key_bits: 2048
+        ssh_key_file: /home/ubuntu/.ssh/id_ed25519
+
+    - name: Run a shell command and register its output as a variable
+      ansible.builtin.shell:
+        cmd: cat /home/ubuntu/.ssh/id_ed25519.pub
+      register: dev_ssh_key
+      ignore_errors: true
+      when: host_name =="dev"
+    - name: Debug dev's SSH public key from hostvars
+      debug:
+        msg: "{{ hostvars['dev'].dev_ssh_key.stdout | default('No stdout found') }}"
+      when: host_name == "web"  
+
+    - name: Distribute the public key to the webserver
+      authorized_key:
+        user: dev
+        state: present
+        key: "{{ dev_ssh_key_public }}"
+          #key: "{{ dev_ssh_key['content'] | b64decode }}"
+      when: host_name == "web"
+
+    - name: Debug SSH key
+      debug:
+        msg: "{{ dev_ssh_key.stdout | default('No stdout found') }}"
+      when: host_name == "dev"
+    - name: Display SSH Public Key from Facts
+      debug:
+        var: ansible_facts['ssh_host_key_ed25519_public']
+#    - name: Debug ansible facts
+#      debug:
+#        var=ansible_facts
+          
+        #    - name: Read ssh-key from Dev instance
+        #      ansible.builtin.slurp:
+        #        src: /home/dev/.ssh/id_ed25519.pub
+        #      register: dev_ssh_key
+        #      when: host_name == "dev"
+        #
+#    - name: Store SSH key in a global variable
+#      set_fact:
+#        shared_ssh_key: "{{ dev_ssh_key.content | b64decode }}"    
+#      when: host_name == "dev"
+#
+#    - name: Fetch SSH key from dev and make it available to all hosts
+#      set_fact:
+#        shared_ssh_key: "{{ hostvars['dev']['shared_ssh_key'] }}"
+#      when: host_name == "web"
+#
+#    
+#
+#    - name: Update apt cache
+#      ansible.builtin.apt:
+#        update_cache: true
+#
+#    - name: Install apache2
+#      ansible.builtin.apt:
+#        name: apache2
+#        state: latest
+#      when: host_name == "web"
+#    - name: Install gcc, jed
+#      ansible.builtin.apt:
+#        pkg:
+#          - gcc
+#          - jed
+#      when: host_name == "dev"

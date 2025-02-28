@@ -1,0 +1,49 @@
+---
+- name: Remove Nginx webserver from slave
+  hosts: 10.196.242.175
+  become: yes
+
+  tasks:
+    - name: Check if Nginx is installed
+      command: dpkg -l nginx
+      register: nginx_installed
+      ignore_errors: yes
+
+    - name: Stop Nginx service
+      service:
+        name: nginx
+        state: stopped
+      when: nginx_installed.rc == 0
+
+    - name: Remove Nginx package
+      apt:
+        name: nginx
+        state: absent
+      when: nginx_installed.rc == 0
+
+    - name: Remove Nginx configuration files
+      file:
+        path: /etc/nginx
+        state: absent
+        recurse: yes
+      when: nginx_installed.rc == 0
+
+    - name: Remove Nginx log files
+      file:
+        path: /var/log/nginx
+        state: absent
+        recurse: yes
+      when: nginx_installed.rc == 0
+
+    - name: Remove Nginx www directory
+      file:
+        path: /usr/share/nginx
+        state: absent
+        recurse: yes
+      when: nginx_installed.rc == 0
+
+    - name: Autoremove unnecessary packages
+      apt:
+        autoremove: yes
+        state: present
+      when: nginx_installed.rc == 0

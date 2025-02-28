@@ -1,0 +1,26 @@
+- hosts: 10.196.242.175
+  become: true
+  tasks:
+    - name: Update cache
+      apt:
+        update_cache: true
+
+    - name: Install apache 2
+      apt:
+        name: apache2
+        state: present
+
+    - name: Add a new user
+      ansible.builtin.user:
+        name: webadmin
+        shell: /bin/bash
+        create_home: yes
+        home: /home/webadmin
+        state: present
+
+    - name: Ensure apache2 is running
+      ansible.builtin.service:
+        name: apache2
+        state: started
+        enabled: yes
+

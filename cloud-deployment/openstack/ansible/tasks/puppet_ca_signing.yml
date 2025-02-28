@@ -1,0 +1,73 @@
+---
+- hosts: localhost
+  name: Manage Puppet Certificates
+  tasks:
+    - name: Get list of pending certificate requests
+      ansible.builtin.command:
+        cmd: /opt/puppetlabs/bin/puppetserver ca list --format json
+      register: pending_certs
+      changed_when: false
+      become: true
+
+    - name: Extract agent certnames from JSON output
+      ansible.builtin.set_fact:
+        agent_certs: "{{ pending_certs.stdout | from_json | json_query('requested[*].name') }}"
+
+    - name: Debug extracted agent certificates
+      ansible.builtin.debug:
+        var: agent_certs
+
+    - name: Sign all pending Puppet agent certificates
+      ansible.builtin.command:
+        cmd: /opt/puppetlabs/bin/puppetserver ca sign --certname "{{ item }}"
+      become: true
+      loop: "{{ agent_certs }}"
+      when: agent_certs | length > 0
+
+#    - name: Get list of pending certificate requests
+#      ansible.builtin.command:
+#        cmd: /opt/puppetlabs/bin/puppetserver ca list --format text
+#      register: pending_certs
+#      changed_when: false
+#      become: true
+#
+#    - name: Extract agent certnames from pending requests
+#      ansible.builtin.set_fact:
+#        agent_certs: "{{ pending_certs.stdout_lines | map('regex_search', '^(\\S+)', '\\1') | list }}"
+#
+#    - name: Sign all pending Puppet agent certificates
+#      ansible.builtin.command:
+#        cmd: /opt/puppetlabs/bin/puppetserver ca sign --certname "{{ item }}"
+#      become: true
+#      loop: "{{ agent_certs }}"
+#      when: agent_certs | length > 0
+#
+#    - name: Get list of all signed Puppet certificates
+#      ansible.builtin.command: /opt/puppetlabs/bin/puppetserver ca list --all
+#      register: cert_list
+#      changed_when: false
+#      become: true
+#
+#    - name: Filter out puppetmaster certificates
+#      ansible.builtin.set_fact:
+#        certs_to_remove: "{{ cert_list.stdout_lines | map('regex_search', '^(\\S+)', '\\1') | reject('search', 'puppetmaster') | list }}"
+#
+#    - name: Revoke and clean old certificates
+#      ansible.builtin.command:
+#        cmd: /opt/puppetlabs/bin/puppetserver ca revoke --certname "{{ item }}"
+#      with_items: "{{ certs_to_remove }}"
+#      become: true
+#      ignore_errors: true
+#
+#    - name: Clean old certificates
+#      ansible.builtin.command:
+#        cmd: /opt/puppetlabs/bin/puppetserver ca clean --certname "{{ item }}"
+#      with_items: "{{ certs_to_remove }}"
+#      become: true
+#      ignore_errors: true
+#
+#    - name: Restart Puppet server after certificate cleanup
+#      ansible.builtin.systemd:
+#        name: puppetserver
+#        state: restarted
+#      become: true

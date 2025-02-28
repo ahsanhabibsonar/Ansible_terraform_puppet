@@ -1,0 +1,85 @@
+- hosts: localhost
+  tasks: 
+    - name: Initialize Terraform
+      command: terraform init
+      args:
+        chdir: /home/ubuntu/ansiMini
+
+    - name: Destroy Terraform configuration
+      command: terraform destroy --auto-approve
+      args:
+        chdir: /home/ubuntu/ansiMini
+      register: terraform
+                
+    - name: Apply Terraform configuration
+      command: terraform apply --auto-approve
+      args:
+        chdir: /home/ubuntu/ansiMini
+      register: terraform
+    - name: Get instace IP address
+      #shell: "terraform output -raw instance_ip_address"
+      shell: "terraform output -json instance_ip_address"
+        #shell: 'terraform output instance_ip_address|tr -d \"'
+      args: 
+        chdir: /home/ubuntu/ansiMini
+      register: ipv4_in_json 
+
+    - name: Convert JSON string to a list
+      set_fact:
+        instance_ip_address: "{{ ipv4_in_json.stdout | from_json }}"
+
+      
+    - name: Add host to dynamic group
+      ansible.builtin.add_host:
+        name: "{{ item }}"
+        groups: "dynamic_group"
+      loop: "{{ instance_ip_address }}"
+
+        #- name: Fail if no instance IP is found
+        #  fail:
+        #    msg: "Instance IP address is empty. Terraform output may have failed"
+        #  when: instance_ip_address.stdout == ""
+        #
+    - name: Wait for SSH to become available
+      wait_for:
+        host: "{{ item }}"
+        port: 22
+        delay: 10
+        timeout: 120
+      loop: "{{ instance_ip_address }}"
+    - name: Wait for system to be fully booted and ready for SSH
+      wait_for:
+        path: /var/run/nologin
+        state: absent
+        delay: 10
+        timeout: 600
+          
+- hosts: dynamic_group
+  vars:
+    ansible_ssh_common_args: ' -o StrictHostKeyChecking=no'
+  become: true
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache : true
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+    - name: Copy using inline content
+      ansible.builtin.copy:
+        content: 'Hello from the web {{ inventory_hostname }}' 
+        dest: /var/www/html/index.nginx-debian.html
+        owner: www-data
+        group: www-data
+        mode: '0644'
+    - name: Ensure Nginx is started and enabled
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+
+
+
+
+

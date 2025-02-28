@@ -1,0 +1,64 @@
+#git_checkout.yml
+---
+- name: Create Ansible_terraform_puppet directory
+  ansible.builtin.file:
+    path: /home/ubuntu/Ansible_terraform_puppet
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0755"
+
+- name: Download acit4430 git repository
+  ansible.builtin.git:
+    repo: https://github.com/ahsanhabibsonar/Ansible_terraform_puppet.git
+    dest: /home/ubuntu/Ansible_terraform_puppet
+
+- name: Copy site.pp to /etc/puppetlabs/code/environments/production/manifests/
+  ansible.builtin.copy:
+    src: /home/ubuntu/Ansible_terraform_puppet/site.pp
+    dest: /etc/puppetlabs/code/environments/production/manifests/
+    remote_src: true
+  become: true
+
+- name: Delete existing SSH key if it exists
+  openstack.cloud.keypair:
+    cloud: "{{ lookup('env', 'OS_CLOUD') }}"  # Pull from environment variable
+    state: absent
+    name: my_key
+  ignore_errors: true
+
+- name: Generate SSH key
+  community.crypto.openssh_keypair:
+    path: /home/ubuntu/.ssh/id_ed25519
+    type: ed25519
+    state: present
+
+- name: Upload the SSH key to OpenStack
+  openstack.cloud.keypair:
+    #cloud: openstack_cred1
+    cloud: "{{ lookup('env', 'OS_CLOUD') }}"  # Pull from environment variable
+    state: present
+    name: my_key
+    public_key_file: /home/ubuntu/.ssh/id_ed25519.pub
+
+- name: Terrform creates agents VM inside puppet server
+  ansible.builtin.include_tasks:
+    file: /home/ubuntu/Ansible_terraform_puppet/cloud-deployment/openstack/ansible/tasks/create_multiple_vms.yml
+
+#This following tasks were meant to automate the whole assignment completely but it failed.     
+#- name: Gather facts from dynamic_host
+#  ansible.builtin.set_fact:
+#    server_ip: "{{ ansible_default_ipv4.address }}"
+#
+#
+#- name: Run Ansible within the dynamic host
+#  ansible.builtin.command: ansible-playbook create_agent_vms.yml -e "server_ip={{ ansible_default_ipv4.address }}"
+#  args:
+#    chdir: /home/ubuntu/Ansible_terraform_puppet/cloud-deployment/openstack/ansible
+##
+##    - name: Generate a new certificate at the agent
+#      ansible.builtin.command: /opt/puppetlabs/bin/puppet agent --test
+#      register: puppet_agent_result
+#      retries: 3
+#      delay: 5
+#      until: puppet_agent_result.rc == 0

@@ -1,0 +1,56 @@
+---
+- hosts: dynamic_group
+  vars:
+    ansible_ssh_common_args: " -o StrictHostKeyChecking=no"
+    ansible_ssh_private_key_file: /home/ubuntu/.ssh/id_ed25519
+    puppet_server: puppetmaster.openstacklocal
+    ca_cert_path: /etc/puppet/puppetserver/ca/ca_crt.pem
+    puppet_ssl_dir: /var/lib/puppet/ssl # Updated to agent directory
+
+  become: true
+  tasks:
+    - name: Download Puppet agent
+      ansible.builtin.get_url:
+        url: https://apt.puppet.com/puppet8-release-jammy.deb
+        dest: /tmp/puppet8-release-jammy.deb
+    - name: Install puppet8-release-jammy.deb
+      ansible.builtin.apt:
+        deb: /tmp/puppet8-release-jammy.deb
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+    - name: Install puppet agent
+      ansible.builtin.apt:
+        name: puppet-agent
+        state: present
+
+    - name: Set multiple Puppet configurations in puppet.conf
+      ansible.builtin.blockinfile:
+        path: /etc/puppetlabs/puppet/puppet.conf
+        block: |
+          [main]
+          certname = "{{ ansible_hostname }}.openstacklocal"
+          server = {{ puppet_server }}
+
+          [agent]
+          waitforcert = 60
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+
+    - name: Add Puppetserver to /etc/hosts
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ server_ip }} {{ puppet_server }} puppetmaster"
+        state: present
+
+    - name: Ensure puppet-agent is running
+      ansible.builtin.service:
+        name: puppet
+        state: started
+
+    - name: Wait for Puppet service to settle
+      ansible.builtin.pause:
+        seconds: 10
+
+#    - name: Generate a new certificate at the agent
+#      ansible.builtin.command: /opt/puppetlabs/bin/puppet agent --test
+#      register: puppet_agent_result

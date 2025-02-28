@@ -1,0 +1,86 @@
+- hosts: localhost
+  tasks: 
+    - name: Initialize Terraform
+      command: terraform init
+      args:
+        chdir: /home/ubuntu/webVM
+
+    - name: Destroy Terraform configuration
+      command: terraform destroy --auto-approve
+      args:
+        chdir: /home/ubuntu/webVM
+      register: terraform
+                      
+    - name: Apply Terraform configuration
+      command: terraform apply --auto-approve
+      args:
+        chdir: /home/ubuntu/webVM
+      register: terraform
+    - name: Get instace IP address
+      shell: "terraform output -raw instance_ip_address"
+      #shell: "terraform output -json instance_ip_address"
+      #shell: 'terraform output instance_ip_address|tr -d \"'
+      args: 
+        chdir: /home/ubuntu/webVM
+      register: ipv4_address 
+
+    - name: Add host to dynamic group
+      ansible.builtin.add_host:
+        name: "{{ ipv4_address.stdout }}"
+        groups: dynamic_group
+
+    - name: Fail if no instance IP is found
+      fail:
+        msg: "Instance IP address is empty. Terraform output may have failed"
+      when: ipv4_address.stdout == ""
+        
+    - name: Wait for SSH to become available
+      wait_for:
+        host: '{{ ipv4_address.stdout }}'
+        port: 22
+        delay: 10
+        timeout: 120
+    - name: Wait for system to be fully booted and ready for SSH
+      wait_for:
+        path: /var/run/nologin
+        state: absent
+        delay: 10
+        timeout: 600
+          
+- hosts: dynamic_group
+  vars:
+    ansible_ssh_common_args: ' -o StrictHostKeyChecking=no'
+  become: true
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache : true
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+    - name: Create website Directory
+      ansible.builtin.file:
+        path: /home/ubuntu/website
+        state: directory
+    - name: Copy using inline content
+      ansible.builtin.copy:
+        content: 'Hello from the web'
+          #    dest: /home/ubuntu/website/index.html
+          #- name: copy using from website directoty to nginx sever
+          #  ansible.builtin.copy:
+          #    remote_src: /home/ubuntu/website/index.html
+        dest: /var/www/html/index.nginx-debian.html
+        owner: www-data
+        group: www-data
+        mode: '0644'
+    - name: Ensure Nginx is started and enabled
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+
+
+
+
+

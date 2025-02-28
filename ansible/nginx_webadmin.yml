@@ -1,0 +1,39 @@
+hosts: slave
+vars:
+ansible_ssh_common_args: ' -o StrictHostKeyChecking=no'
+become: true
+tasks:
+
+name: Update cache
+apt:
+update_cache: true
+
+name: Install nginx
+apt:
+name: nginx
+state: present
+
+name: Add a new user
+ansible.builtin.user:
+name: webadmin
+shell: /bin/bash
+create_home: yes
+home: /home/webadmin
+state: present
+
+name: Ensure .ssh directoty exists for webadmin
+ansible.builtin.file:
+path: /home/webadmin/.ssh
+state: directory
+owner: webadmin
+group: webadmin
+mode: '0700'
+
+name: Copy ssh key using inline content
+ansible.builtin.copy:
+src: /home/ubuntu/.ssh/id_ed25519.pub
+dest: /home/webadmin/.ssh/authorized_keys
+#remote_src: yes
+owner: webadmin
+group: webadmin
+mode: '0600'

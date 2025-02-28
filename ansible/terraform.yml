@@ -1,0 +1,25 @@
+---
+- name: Install Terraform
+  hosts: 10.196.245.43
+  become: yes
+  tasks:
+    - name: Download HashiCorp GPG key
+      ansible.builtin.command: wget -O /tmp/hashicorp.gpg https://apt.releases.hashicorp.com/gpg
+
+    - name: Add HashiCorp GPG key to keyring
+      ansible.builtin.command: gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg /tmp/hashicorp.gpg
+
+    - name: Add HashiCorp repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ ansible_architecture }} signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+        filename: "hashicorp"
+
+
+    - name: Update APT package index
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install Terraform
+      ansible.builtin.apt:
+        name: terraform
+        state: present
