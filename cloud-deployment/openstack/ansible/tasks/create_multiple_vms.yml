@@ -35,13 +35,19 @@
 #  register: localhost_ip_result
 #  changed_when: false
 
-- name: Add host to dynamic group and pass localhost IP as puppermaster IP
+- name: Get the SSH private key path
+  ansible.builtin.set_fact:
+    ssh_private_key: "{{ lookup('file', '/home/ubuntu/.ssh/id_ed25519') }}"
+
+- name: Add host to dynamic group and pass puppet servers' IP and ssh_private_key 
   ansible.builtin.add_host:
     name: "{{ item }}"
     groups: dynamic_group
     #server_ip: "{{ localhost_ip_result.stdout }}"
     server_ip: "{{ ansible_default_ipv4.address }}"
+    ansible_ssh_private_key_file: "{{ ssh_private_key }}"
   loop: "{{ instance_ip_address }}"
+
 - name: Ensure .ansible directory exists
   ansible.builtin.file:
     path: /home/ubuntu/.ansible
